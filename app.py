@@ -1,46 +1,80 @@
 import pandas as pd
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load dataset
-data = pd.read_csv("sales_data_sample.csv", encoding='latin1')
+# 1. Load and Clean Data
+def load_data(file_path):
+    df = pd.read_csv(file_path, encoding='unicode_escape')
+    df['ORDERDATE'] = pd.to_datetime(df['ORDERDATE'])
+    return df
 
-# Show first rows
-print("Sample Data:\n", data.head())
+# 2. Simulated Profit Engine
+# Since the dataset doesn't have a 'Cost' column, we simulate one as 65% of MSRP
+def calculate_metrics(df):
+    df['ESTIMATED_COST_EACH'] = df['MSRP'] * 0.65
+    df['TOTAL_COST'] = df['QUANTITYORDERED'] * df['ESTIMATED_COST_EACH']
+    df['PROFIT'] = df['SALES'] - df['TOTAL_COST']
+    df['MARGIN_PERCENT'] = (df['PROFIT'] / df['SALES']) * 100
+    # Price Efficiency: How close the actual price is to MSRP
+    df['PRICE_EFFICIENCY'] = (df['PRICEEACH'] / df['MSRP']) * 100
+    return df
 
-# Create Profit Category (Target)
-# If profit > average → HIGH else LOW
-avg_profit = data['Profit'].mean()
-data['Profit_Label'] = data['Profit'].apply(lambda x: 1 if x > avg_profit else 0)
+# 3. AI Agent Analysis & Recommendations
+class ProfitControlAgent:
+    def __init__(self, df):
+        self.df = df
 
-# Features & Target
-X = data[['Sales', 'Quantity', 'Discount']]
-y = data['Profit_Label']
+    def get_low_margin_alerts(self, threshold=15):
+        """Flags transactions where margin is below a certain threshold."""
+        low_margin = self.df[self.df['MARGIN_PERCENT'] < threshold]
+        return low_margin[['ORDERNUMBER', 'PRODUCTLINE', 'COUNTRY', 'MARGIN_PERCENT', 'SALES']]
 
-# Handle missing values if any
-X = X.fillna(0)
+    def analyze_segments(self):
+        """Analyzes which product lines are most and least profitable."""
+        summary = self.df.groupby('PRODUCTLINE').agg({
+            'SALES': 'sum',
+            'PROFIT': 'sum',
+            'MARGIN_PERCENT': 'mean'
+        }).sort_values(by='PROFIT', ascending=False)
+        return summary
 
-# Split dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    def generate_recommendations(self):
+        recommendations = []
+        # Check for price efficiency
+        avg_efficiency = self.df['PRICE_EFFICIENCY'].mean()
+        if avg_efficiency < 85:
+            recommendations.append("CRITICAL: Average selling price is < 85% of MSRP. Audit discount policies.")
+        
+        # Check for underperforming lines
+        summary = self.analyze_segments()
+        worst_line = summary.index[-1]
+        recommendations.append(f"OPTIMIZATION: The '{worst_line}' line has the lowest total profit. Consider cost reduction or price hikes.")
+        
+        return recommendations
 
-# Train model
-model = DecisionTreeClassifier()
-model.fit(X_train, y_train)
+# --- Execution ---
+data = load_data('sales_data_sample.csv')
+data = calculate_metrics(data)
+agent = ProfitControlAgent(data)
 
-# Predict
-y_pred = model.predict(X_test)
+# Run Agent Insights
+print("--- AI PROFIT AGENT REPORT ---")
+print(f"Total Sales: ${data['SALES'].sum():,.2f}")
+print(f"Total Estimated Profit: ${data['PROFIT'].sum():,.2f}")
+print(f"Average Margin: {data['MARGIN_PERCENT'].mean():.2f}%")
 
-# Accuracy
-accuracy = accuracy_score(y_test, y_pred)
-print("\nModel Accuracy:", round(accuracy*100,2), "%")
+print("\n--- PERFORMANCE BY PRODUCT LINE ---")
+print(agent.analyze_segments())
 
-# Show predictions
-print("\nPredictions:")
-for i in range(10):
-    label = "HIGH PROFIT 📈" if y_pred[i] == 1 else "LOW PROFIT 📉"
-    print(f"Record {i+1}: {label}")
+print("\n--- STRATEGIC RECOMMENDATIONS ---")
+for rec in agent.generate_recommendations():
+    print(f"- {rec}")
 
-# Total Profit Calculation
-total_profit = data['Profit'].sum()
-print("\nTotal Profit:", total_profit)
+# 4. Visualization
+plt.figure(figsize=(12, 6))
+sns.barplot(x='PRODUCTLINE', y='PROFIT', data=data, estimator=sum, palette='viridis')
+plt.title('Total Profit Contribution by Product Line')
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig('profit_analysis.png')
